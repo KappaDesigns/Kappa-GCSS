@@ -10,7 +10,6 @@
 //DEFINES
 #define TRUE 1
 #define FALSE 0
-#define COMMENT "//KAPPA-KCSS CONSTRAINT BASED CSS \n//CREATED WITH 💖 @ https://github.com/KappaDesigns/Kappa-KCSS"
 //END DEFINES
 
 //ENUMS
