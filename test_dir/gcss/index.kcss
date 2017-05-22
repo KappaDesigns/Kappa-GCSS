@@ -1,5 +1,1 @@
-#elementId[width] == 100;
-#elementId[content]: 'Nice Meme \n Dog\"';
-p[line-height] <= 16;
-p[line-height] >= 12;
-
+div[data-value="true"]:hover
