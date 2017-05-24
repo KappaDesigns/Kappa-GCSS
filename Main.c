@@ -449,6 +449,13 @@ SyntaxNode* readSelectorType(TokenStream* stream) {
   return NULL;
 }
 
+
+//TODO
+//1. readExpression
+//2. read semi colons in readAllDeclarationsInRuleSet
+//3. readFunction
+//4. readHexColor
+
 SyntaxNode* readExpression(TokenStream* stream) {
   SyntaxNode* node = createNode(NodeType_Expression);
   Token token = currentToken(stream);
