@@ -1,3 +1,4 @@
- div .contianer:hover {
-	 
- }
+div + .contianer > #dank {
+	ab: bc
+	cb: ba
+}

@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <ctype.h>
+#include <assert.h>
 
 //DEFINES
 #define TRUE 1
@@ -20,6 +21,8 @@ typedef enum {
   TokenType_Right_Bracket,
   TokenType_Left_Curly,
   TokenType_Right_Curly,
+  TokenType_Greater_Than,
+  TokenType_Less_Than,
   TokenType_Equals,
   TokenType_Contains_Value,
   TokenType_Contains_Value_In_Space_List,
@@ -30,9 +33,14 @@ typedef enum {
   TokenType_Number,
   TokenType_Semi_Colon,
   TokenType_Colon,
+  TokenType_Comma,
   TokenType_Important,
   TokenType_Identifier,
   TokenType_String,
+  TokenType_Plus,
+  TokenType_Dash,
+  TokenType_Astrix,
+  TokenType_Slash,
   TokenType_Global_Selector,
   TokenType_WhiteSpace,
   TokenType_EOF,
@@ -42,15 +50,17 @@ typedef enum {
 typedef enum {
   NodeType_Ruleset,
   NodeType_Selector,
+  NodeType_Simple_Selector,
   NodeType_Class,
   NodeType_Id,
   NodeType_Psuedo,
   NodeType_Data_Attribute,
   NodeType_Attribute_Assigner,
-  NodeType_Decleration,
-  NodeType_Decleration_Assigner,
+  NodeType_Declaration,
+  NodeType_Combinator,
   NodeType_String,
-  NodeType_Identifier
+  NodeType_Identifier,
+  NodeType_Expression
 } NodeType;
 //END ENUMS
 
@@ -68,9 +78,16 @@ typedef struct {
   int length;
 } TokenStream;
 
+typedef struct {
+  void** items;
+  int length;
+} Array;
+
+
 typedef struct _SyntaxNode {
   NodeType type;
   Token token;
+  Array list;
   struct _SyntaxNode* left;
   struct _SyntaxNode* right;
 } SyntaxNode;
@@ -79,10 +96,21 @@ typedef struct {
   SyntaxNode* root;
 } SyntaxTree;
 
+typedef struct _LinkedListNode {
+  void* data;
+  struct _LinkedListNode* next;
+} LinkedListNode;
+
 typedef struct {
   struct _SyntaxNode* property;
   struct _SyntaxNode* expression;
-} Decleration;
+} Declaration;
+
+typedef struct _Selector {
+  struct _SyntaxNode* simpleSelector;
+  struct _SyntaxNode* combinator;
+  struct _Selector* selector;
+} Selector;
 //END STRUCTS
 
 //TOKEN TABLE
@@ -103,12 +131,19 @@ Token tokens[] = {
   {TokenType_Value_Starts_With, "^="},
   {TokenType_Important, "!important"},
   {TokenType_Left_Curly, "{"},
-  {TokenType_Right_Curly, "}"}
+  {TokenType_Right_Curly, "}"},
+  {TokenType_Comma, ","},
+  {TokenType_Less_Than, "<"},
+  {TokenType_Greater_Than, ">"},
+  {TokenType_Plus, "+"},
+  {TokenType_Dash, "-"},
+  {TokenType_Astrix, "*"},
+  {TokenType_Slash, "/"}
 };
 Token token_eof = {TokenType_EOF, ""};
 //END TOKEN TABLE
 
-//FUNCTION DECLERATION
+//FUNCTION DECLARATION
 int verifyPath(char const* path, int writePath);
 int fileExists(char const* path, int writePath);
 int lastIndexOf(char const* string, char ch);
@@ -131,6 +166,9 @@ void advance(TokenStream* stream);
 int runWhiteSpace(TokenStream* stream);
 int isCSSSelector(Token token);
 int isElementName(Token token);
+int isAttributeAssigner(Token token);
+LinkedListNode* createLinkedListNode();
+Array linkedListToArray(LinkedListNode* front, SyntaxNode* node, int size);
 SyntaxNode* createNode(NodeType type);
 SyntaxNode* readIdentifier(TokenStream* stream);
 SyntaxNode* readString(TokenStream* stream);
@@ -143,10 +181,16 @@ SyntaxNode* readSimpleSelector(TokenStream* stream);
 SyntaxNode* readAttribute(TokenStream* stream);
 SyntaxNode* readAttributeAssignment(TokenStream* stream);
 SyntaxNode* readRuleset(TokenStream* stream);
+SyntaxNode* readCombinator(TokenStream* stream);
 SyntaxNode* readAllDeclarationsInRuleSet(TokenStream* stream);
-SyntaxNode* readDeclaration(TokenStream* stream);
-SyntaxNode* readSelector(TokenStream* stream);
-//END FUNCTION DECLERATION
+SyntaxNode* readAllSelectorsInRuleSet(TokenStream* stream);
+SyntaxNode* readExpression(TokenStream* stream);
+SyntaxNode* readOperator(TokenStream* stream);
+SyntaxNode* readTerm(TokenStream* stream);
+SyntaxNode* readFunction(TokenStream* stream);
+Declaration* readDeclaration(TokenStream* stream);
+Selector* readSelector(TokenStream* stream);
+//END FUNCTION DECLARATION
 
 char* nodeTypeToString(NodeType type) {
   switch (type) {
@@ -168,8 +212,10 @@ char* nodeTypeToString(NodeType type) {
       return "NodeType_Attribute_Assigner";
     case NodeType_Ruleset:
       return "NodeType_Ruleset";
+    case NodeType_Declaration:
+      return "NodeType_Declaration";
     default:
-      return NULL;
+      return "NodeType_Unknown";
   }
 }
 
@@ -198,12 +244,45 @@ int main(int argc, char const* argv[]) {
 }
 
 int isCSSSelector(Token token) {
-  return (token.type == TokenType_Pound || token.type == TokenType_Colon ||
-          token.type == TokenType_Class_Selector || token.type == TokenType_Left_Bracket);
+  return (token.type == TokenType_Pound ||
+          token.type == TokenType_Colon ||
+          token.type == TokenType_Class_Selector ||
+          token.type == TokenType_Left_Bracket);
 }
 
 int isElementName(Token token) {
-  return (token.type == TokenType_Global_Selector || token.type == TokenType_Identifier);
+  return (
+    token.type == TokenType_Global_Selector ||
+    token.type == TokenType_Identifier
+  );
+}
+
+int isAttributeAssigner(Token token) {
+  return (
+    token.type == TokenType_Equals ||
+    token.type == TokenType_Contains_Value ||
+    token.type == TokenType_Contains_Value_In_Dash_List ||
+    token.type == TokenType_Contains_Value_In_Space_List ||
+    token.type == TokenType_Value_Starts_With ||
+    token.type == TokenType_Value_Ends_With
+  );
+}
+
+int isOperator(Token token) {
+  return (
+    token.type == TokenType_Plus ||
+    token.type == TokenType_Dash ||
+    token.type == TokenType_Astrix ||
+    token.type == TokenType_Slash
+  );
+}
+
+int isTerm(Token token) {
+  return (
+    token.type == TokenType_Identifier ||
+    token.type == TokenType_String ||
+    token.type == TokenType_Number
+  );
 }
 
 int runWhiteSpace(TokenStream* stream) {
@@ -215,29 +294,122 @@ int runWhiteSpace(TokenStream* stream) {
   return wasWhiteSpace;
 }
 
+LinkedListNode* createLinkedListNode() {
+  LinkedListNode* node = (LinkedListNode*)malloc(sizeof(LinkedListNode));
+  node -> data = NULL;
+  node -> next = NULL;
+  return node;
+}
+
+Array linkedListToArray(LinkedListNode* front, SyntaxNode* node, int size) {
+  int i = 0;
+  Array array;
+  LinkedListNode* current = front;
+  array.length = size;
+  array.items = (void**)malloc(sizeof(void*) * size);
+  while(current != NULL) {
+    array.items[i] = current -> data;
+    current = current -> next;
+    i++;
+  }
+  return array;
+}
+
 SyntaxNode* readRuleset(TokenStream* stream) {
   SyntaxNode* node = createNode(NodeType_Ruleset);
-  SyntaxNode* selectorNode = readSimpleSelector(stream);
-  SyntaxNode* declerationNode = readAllDeclarationsInRuleSet(stream);
+  SyntaxNode* selectorNode = readAllSelectorsInRuleSet(stream);
+  SyntaxNode* declarationNode = readAllDeclarationsInRuleSet(stream);
   node -> left = selectorNode;
-  node -> right = declerationNode;
+  node -> right = declarationNode;
+  return node;
+}
+
+SyntaxNode* readAllSelectorsInRuleSet(TokenStream* stream) {
+  SyntaxNode* node = createNode(NodeType_Selector);
+  LinkedListNode* front = NULL;
+  LinkedListNode* prev = NULL;
+  int listSize = 0;
+  runWhiteSpace(stream);
+  while(currentToken(stream).type != TokenType_Left_Curly || currentToken(stream).type == TokenType_Comma) {
+    listSize++;
+    LinkedListNode* current = createLinkedListNode();
+    runWhiteSpace(stream);
+    Selector* selector = readSelector(stream);
+    current -> data = selector;
+    if (front == NULL) {
+      front = current;
+      prev = front;
+    } else {
+      prev -> next = current;
+      prev = current;
+    }
+  }
+  Array array = linkedListToArray(front, node, listSize);
+  node -> list = array;
   return node;
 }
 
 SyntaxNode* readAllDeclarationsInRuleSet(TokenStream* stream) {
-  return NULL;
+  SyntaxNode* node = createNode(NodeType_Declaration);
+  LinkedListNode* front = NULL;
+  LinkedListNode* prev = NULL;
+  int listSize = 0;
+  runWhiteSpace(stream);
+  nextToken(stream, TokenType_Left_Curly);
+  while(currentToken(stream).type != TokenType_Right_Curly) {
+    listSize++;
+    LinkedListNode* current = createLinkedListNode();
+    runWhiteSpace(stream);
+    Declaration* declaration = readDeclaration(stream);
+    current -> data = declaration;
+
+    if (front == NULL) {
+      front = current;
+      prev = front;
+    }
+    else {
+      assert(prev->next == NULL);
+      prev->next = current;
+      prev = current;
+    }
+  }
+  Array array = linkedListToArray(front, node, listSize);
+  node -> list = array;
+  return node;
 }
 
-SyntaxNode* readDeclaration(TokenStream* stream) {
-  return NULL;
+Declaration* readDeclaration(TokenStream* stream) {
+  Declaration* declaration = (Declaration*)malloc(sizeof(Declaration));
+  declaration -> property = readIdentifier(stream);
+  runWhiteSpace(stream);
+  nextToken(stream, TokenType_Colon);
+  runWhiteSpace(stream);
+  declaration -> expression = readIdentifier(stream);
+  runWhiteSpace(stream);
+  return declaration;
 }
 
-SyntaxNode* readSelector(TokenStream* stream) {
-  return NULL;
+Selector* readSelector(TokenStream* stream) {
+  Selector* selector = (Selector*)malloc(sizeof(Selector));
+  selector -> simpleSelector = readSimpleSelector(stream);
+  runWhiteSpace(stream);
+  if (currentToken(stream).type == TokenType_Plus || currentToken(stream).type == TokenType_Greater_Than) {
+    selector -> combinator = readCombinator(stream);
+    runWhiteSpace(stream);
+    if (isCSSSelector(currentToken(stream)) || isElementName(currentToken(stream))) {
+      selector -> selector = readSelector(stream);
+    } else {
+      exit(1);
+    }
+  } else if (isCSSSelector(currentToken(stream)) || isElementName(currentToken(stream))) {
+    selector -> selector = readSelector(stream);
+  }
+  return selector;
 }
 
 SyntaxNode* readSimpleSelector(TokenStream* stream) {
   SyntaxNode* node = NULL;
+  runWhiteSpace(stream);
   if (isElementName(currentToken(stream))) {
     node = readIdentifier(stream);
   }
@@ -255,7 +427,7 @@ SyntaxNode* readSimpleSelector(TokenStream* stream) {
 }
 
 SyntaxNode* readCSSSelector(TokenStream* stream) {
-  SyntaxNode* node = createNode(NodeType_Selector);
+  SyntaxNode* node = createNode(NodeType_Simple_Selector);
   node -> right = readSelectorType(stream);
   return node;
 }
@@ -275,6 +447,32 @@ SyntaxNode* readSelectorType(TokenStream* stream) {
     return readAttribute(stream);
   }
   return NULL;
+}
+
+SyntaxNode* readExpression(TokenStream* stream) {
+  SyntaxNode* node = createNode(NodeType_Expression);
+  Token token = currentToken(stream);
+  return node;
+}
+
+SyntaxNode* readTerm(TokenStream* stream) {
+  return NULL;
+}
+
+SyntaxNode* readOperator(TokenStream* stream) {
+  return NULL;
+}
+
+SyntaxNode* readFunction(TokenStream* stream) {
+  return NULL;
+}
+
+SyntaxNode* readCombinator(TokenStream* stream) {
+  SyntaxNode* node = createNode(NodeType_Combinator);
+  Token token = currentToken(stream);
+  advance(stream);
+  node -> token = token;
+  return node;
 }
 
 SyntaxNode* readClass(TokenStream* stream) {
@@ -316,6 +514,8 @@ SyntaxNode* readAttribute(TokenStream* stream) {
       node -> left =  readString(stream);
     }
   }
+  nextToken(stream, TokenType_Right_Bracket);
+  runWhiteSpace(stream);
   return node;
 }
 
@@ -325,27 +525,9 @@ SyntaxNode* readAttributeAssignment(TokenStream* stream) {
   Token token = currentToken(stream);
   advance(stream);
   node -> type = NodeType_Attribute_Assigner;
-  switch (token.type) {
-    case TokenType_Equals:
-      node -> token = token;
-      return node;
-    case TokenType_Contains_Value:
-      node -> token = token;
-      return node;
-    case TokenType_Contains_Value_In_Dash_List:
-      node -> token = token;
-      return node;
-    case TokenType_Contains_Value_In_Space_List:
-      node -> token = token;
-      return node;
-    case TokenType_Value_Starts_With:
-      node -> token = token;
-      return node;
-    case TokenType_Value_Ends_With:
-      node -> token = token;
-      return node;
-    default:
-      return NULL;
+  if (isAttributeAssigner(token)) {
+    node -> token = token;
+    return node;
   }
   return NULL;
 }
@@ -392,7 +574,7 @@ TokenStream* readFile(FILE* file) {
 Token nextToken(TokenStream* stream, TokenType type) {
   Token token = currentToken(stream);
   if (token.type != type) {
-    printf("%s\n", "error");
+    printf("[error] expected:%d actual:%d offset:%d \n", type, token.type, stream -> offset);
     exit(0);
   }
   advance(stream);
