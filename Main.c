@@ -78,6 +78,11 @@ typedef struct _SyntaxNode {
 typedef struct {
   SyntaxNode* root;
 } SyntaxTree;
+
+typedef struct {
+  struct _SyntaxNode* property;
+  struct _SyntaxNode* expression;
+} Decleration;
 //END STRUCTS
 
 //TOKEN TABLE
@@ -121,23 +126,26 @@ Token readIndentifierToken(TokenStream* stream);
 Token readNumberToken(TokenStream* stream);
 Token readStringToken(TokenStream* stream, char quoteType);
 Token currentToken(TokenStream* stream);
+Token nextToken(TokenStream* stream, TokenType type);
 void advance(TokenStream* stream);
-void runWhiteSpace(TokenStream* stream);
+int runWhiteSpace(TokenStream* stream);
 int isCSSSelector(Token token);
 int isElementName(Token token);
+SyntaxNode* createNode(NodeType type);
 SyntaxNode* readIdentifier(TokenStream* stream);
 SyntaxNode* readString(TokenStream* stream);
-SyntaxNode* readSelectorType(TokenStream* stream, SyntaxNode* parent);
-SyntaxNode* readCSSSelector(TokenStream* stream, SyntaxNode* child);
-SyntaxNode* readClass(TokenStream* stream, SyntaxNode* node);
-SyntaxNode* readId(TokenStream* stream, SyntaxNode* node);
-SyntaxNode* readPsuedo(TokenStream* stream, SyntaxNode* node);
+SyntaxNode* readSelectorType(TokenStream* stream);
+SyntaxNode* readCSSSelector(TokenStream* stream);
+SyntaxNode* readClass(TokenStream* stream);
+SyntaxNode* readId(TokenStream* stream);
+SyntaxNode* readPsuedo(TokenStream* stream);
 SyntaxNode* readSimpleSelector(TokenStream* stream);
-SyntaxNode* readAttribute(TokenStream* stream, SyntaxNode* node);
+SyntaxNode* readAttribute(TokenStream* stream);
 SyntaxNode* readAttributeAssignment(TokenStream* stream);
 SyntaxNode* readRuleset(TokenStream* stream);
-SyntaxNode* readAllDeclerationsInRuleSet(TokenStream* stream);
-SyntaxNode* readDecleration(TokenStream* stream, SyntaxNode* parent);
+SyntaxNode* readAllDeclarationsInRuleSet(TokenStream* stream);
+SyntaxNode* readDeclaration(TokenStream* stream);
+SyntaxNode* readSelector(TokenStream* stream);
 //END FUNCTION DECLERATION
 
 char* nodeTypeToString(NodeType type) {
@@ -184,6 +192,7 @@ int main(int argc, char const* argv[]) {
   printWatchingFiles();
 
   root = readRuleset(tokenStream);
+  printf("\n");
   print(root);
   return 0;
 }
@@ -197,44 +206,47 @@ int isElementName(Token token) {
   return (token.type == TokenType_Global_Selector || token.type == TokenType_Identifier);
 }
 
-void runWhiteSpace(TokenStream* stream) {
+int runWhiteSpace(TokenStream* stream) {
+  int wasWhiteSpace = FALSE;
   while(currentToken(stream).type == TokenType_WhiteSpace) {
     advance(stream);
+    wasWhiteSpace = TRUE;
   }
+  return wasWhiteSpace;
 }
 
 SyntaxNode* readRuleset(TokenStream* stream) {
-  SyntaxNode* node = (SyntaxNode*)malloc(sizeof(SyntaxNode));
+  SyntaxNode* node = createNode(NodeType_Ruleset);
   SyntaxNode* selectorNode = readSimpleSelector(stream);
-  SyntaxNode* declerationNode = readAllDeclerationsInRuleSet(stream);
-  node -> type = NodeType_Ruleset;
+  SyntaxNode* declerationNode = readAllDeclarationsInRuleSet(stream);
   node -> left = selectorNode;
   node -> right = declerationNode;
   return node;
 }
 
-SyntaxNode* readAllDeclerationsInRuleSet(TokenStream* stream) {
+SyntaxNode* readAllDeclarationsInRuleSet(TokenStream* stream) {
   return NULL;
 }
 
-SyntaxNode* readDecleration(TokenStream* stream, SyntaxNode* parent) {
+SyntaxNode* readDeclaration(TokenStream* stream) {
+  return NULL;
+}
+
+SyntaxNode* readSelector(TokenStream* stream) {
   return NULL;
 }
 
 SyntaxNode* readSimpleSelector(TokenStream* stream) {
-  int wasWhiteSpace = FALSE;
   SyntaxNode* node = NULL;
   if (isElementName(currentToken(stream))) {
     node = readIdentifier(stream);
   }
   runWhiteSpace(stream);
   while (isCSSSelector(currentToken(stream))) {
-    SyntaxNode* parent = readCSSSelector(stream, node);
+    SyntaxNode* parent = readCSSSelector(stream);
+    parent -> left = node;
     node = parent;
-    while (currentToken(stream).type == TokenType_WhiteSpace) {
-      wasWhiteSpace = TRUE;
-      advance(stream);
-    }
+    int wasWhiteSpace = runWhiteSpace(stream);
     if (wasWhiteSpace && currentToken(stream).type == TokenType_Colon) {
       break;
     }
@@ -242,78 +254,67 @@ SyntaxNode* readSimpleSelector(TokenStream* stream) {
   return node;
 }
 
-SyntaxNode* readCSSSelector(TokenStream* stream, SyntaxNode* child) {
-  SyntaxNode* node = (SyntaxNode*)malloc(sizeof(SyntaxNode));
-  node -> left = child;
-  node -> type = NodeType_Selector;
-  node = readSelectorType(stream, node);
+SyntaxNode* readCSSSelector(TokenStream* stream) {
+  SyntaxNode* node = createNode(NodeType_Selector);
+  node -> right = readSelectorType(stream);
   return node;
 }
 
-SyntaxNode* readSelectorType(TokenStream* stream, SyntaxNode* parent) {
-  SyntaxNode* node = (SyntaxNode*)malloc(sizeof(SyntaxNode));
+SyntaxNode* readSelectorType(TokenStream* stream) {
   Token token = currentToken(stream);
-  advance(stream);
   if (token.type == TokenType_Class_Selector) {
-    readClass(stream, node);
+    return readClass(stream);
   }
   if (token.type == TokenType_Pound) {
-    readId(stream, node);
+    return readId(stream);
   }
   if (token.type == TokenType_Colon) {
-    readPsuedo(stream, node);
+    return readPsuedo(stream);
   }
   if (token.type == TokenType_Left_Bracket) {
-    readAttribute(stream, node);
+    return readAttribute(stream);
   }
-  parent -> right = node;
-  return parent;
+  return NULL;
 }
 
-SyntaxNode* readClass(TokenStream* stream, SyntaxNode* node) {
-  Token token = currentToken(stream);
-  advance(stream);
-  if (token.type == TokenType_Identifier) {
-    node -> type = NodeType_Class;
-    node -> token = token;
-  }
+SyntaxNode* readClass(TokenStream* stream) {
+  nextToken(stream, TokenType_Class_Selector);
+  Token token = nextToken(stream, TokenType_Identifier);
+  SyntaxNode* node = createNode(NodeType_Class);
+  node->token = token;
   return node;
 }
 
-SyntaxNode* readId(TokenStream* stream, SyntaxNode* node) {
-  Token token = currentToken(stream);
-  advance(stream);
-  if (token.type == TokenType_Identifier) {
-    node -> type = NodeType_Id;
-    node -> token = token;
-  }
+SyntaxNode* readId(TokenStream* stream) {
+  nextToken(stream, TokenType_Pound);
+  Token token = nextToken(stream, TokenType_Identifier);
+  SyntaxNode* node = createNode(NodeType_Id);
+  node->token = token;
   return node;
 }
 
-SyntaxNode* readPsuedo(TokenStream* stream, SyntaxNode* node) {
-  Token token = currentToken(stream);
-  advance(stream);
-  if (token.type == TokenType_Identifier) {
-    node -> type = NodeType_Psuedo;
-    node -> token = token;
-  }
+SyntaxNode* readPsuedo(TokenStream* stream) {
+  nextToken(stream, TokenType_Colon);
+  Token token = nextToken(stream, TokenType_Identifier);
+  SyntaxNode* node = createNode(NodeType_Psuedo);
+  node->token = token;
   return node;
 }
 
-SyntaxNode* readAttribute(TokenStream* stream, SyntaxNode* parent) {
-  parent -> type = NodeType_Data_Attribute;
+SyntaxNode* readAttribute(TokenStream* stream) {
+  nextToken(stream, TokenType_Left_Bracket);
   runWhiteSpace(stream);
-  parent -> left = readIdentifier(stream);
   SyntaxNode* node = readAttributeAssignment(stream);
   if (node != NULL) {
     runWhiteSpace(stream);
     if (currentToken(stream).type == TokenType_Identifier) {
+      nextToken(stream, TokenType_Identifier);
       node -> left = readIdentifier(stream);
     }
     if (currentToken(stream).type == TokenType_String) {
+      nextToken(stream, TokenType_String);
       node -> left =  readString(stream);
     }
-    parent -> right = node;
   }
   return node;
 }
@@ -350,27 +351,23 @@ SyntaxNode* readAttributeAssignment(TokenStream* stream) {
 }
 
 SyntaxNode* readString(TokenStream* stream) {
-  SyntaxNode* node = (SyntaxNode*)malloc(sizeof(SyntaxNode));
-  Token token = currentToken(stream);
-  advance(stream);
-  if (token.type == TokenType_String) {
-    node -> token = token;
-    node -> type = NodeType_String;
-    return node;
-  }
-  return NULL;
+  Token token = nextToken(stream, TokenType_String);
+  SyntaxNode* node = createNode(NodeType_String);
+  node -> token = token;
+  return node;
 }
 
 SyntaxNode* readIdentifier(TokenStream* stream) {
+  Token token = nextToken(stream, TokenType_Identifier);
+  SyntaxNode* node = createNode(NodeType_Identifier);
+  node -> token = token;
+  return node;
+}
+
+SyntaxNode* createNode(NodeType type) {
   SyntaxNode* node = (SyntaxNode*)malloc(sizeof(SyntaxNode));
-  Token token = currentToken(stream);
-  advance(stream);
-  if (token.type == TokenType_Identifier || token.type == TokenType_Global_Selector) {
-    node -> token = token;
-    node -> type = NodeType_Identifier;
-    return node;
-  }
-  return NULL;
+  node -> type = type;
+  return node;
 }
 
 TokenStream* readFile(FILE* file) {
@@ -390,6 +387,16 @@ TokenStream* readFile(FILE* file) {
   stream -> length = size;
   advance(stream);
   return stream;
+}
+
+Token nextToken(TokenStream* stream, TokenType type) {
+  Token token = currentToken(stream);
+  if (token.type != type) {
+    printf("%s\n", "error");
+    exit(0);
+  }
+  advance(stream);
+  return token;
 }
 
 //[Tokens] readToken
