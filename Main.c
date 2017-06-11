@@ -434,19 +434,18 @@ SyntaxNode* readCSSSelector(TokenStream* stream) {
 
 SyntaxNode* readSelectorType(TokenStream* stream) {
   Token token = currentToken(stream);
-  if (token.type == TokenType_Class_Selector) {
-    return readClass(stream);
+  switch (token.type) {
+    case TokenType_Class_Selector:
+      return readClass(stream);
+    case TokenType_Pound:
+      return readId(stream);
+    case TokenType_Colon:
+      return readPsuedo(stream);
+    case TokenType_Left_Bracket:
+      return readAttribute(stream);
+    default:
+      return NULL;
   }
-  if (token.type == TokenType_Pound) {
-    return readId(stream);
-  }
-  if (token.type == TokenType_Colon) {
-    return readPsuedo(stream);
-  }
-  if (token.type == TokenType_Left_Bracket) {
-    return readAttribute(stream);
-  }
-  return NULL;
 }
 
 
@@ -463,7 +462,10 @@ SyntaxNode* readExpression(TokenStream* stream) {
 }
 
 SyntaxNode* readTerm(TokenStream* stream) {
-  return NULL;
+  SyntaxNode* node = createNode(NodeType_Term);
+  Token token = currentToken(stream);
+  node -> token = token;
+  return node;
 }
 
 SyntaxNode* readOperator(TokenStream* stream) {
