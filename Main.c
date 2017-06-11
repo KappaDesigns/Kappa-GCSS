@@ -60,7 +60,8 @@ typedef enum {
   NodeType_Combinator,
   NodeType_String,
   NodeType_Identifier,
-  NodeType_Expression
+  NodeType_Expression,
+  NodeType_Term
 } NodeType;
 //END ENUMS
 
@@ -185,7 +186,6 @@ SyntaxNode* readCombinator(TokenStream* stream);
 SyntaxNode* readAllDeclarationsInRuleSet(TokenStream* stream);
 SyntaxNode* readAllSelectorsInRuleSet(TokenStream* stream);
 SyntaxNode* readExpression(TokenStream* stream);
-SyntaxNode* readOperator(TokenStream* stream);
 SyntaxNode* readTerm(TokenStream* stream);
 SyntaxNode* readFunction(TokenStream* stream);
 Declaration* readDeclaration(TokenStream* stream);
@@ -270,8 +270,6 @@ int isAttributeAssigner(Token token) {
 
 int isOperator(Token token) {
   return (
-    token.type == TokenType_Plus ||
-    token.type == TokenType_Dash ||
     token.type == TokenType_Astrix ||
     token.type == TokenType_Slash
   );
@@ -283,6 +281,68 @@ int isTerm(Token token) {
     token.type == TokenType_String ||
     token.type == TokenType_Number
   );
+}
+
+int isUnaryOperator(Token token) {
+  return (
+    token.type == TokenType_Plus ||
+    token.type == TokenType_Dash
+  );
+}
+
+int isUnitOperator(Token token) {
+  if (strcmp(token.chars, "%") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "em") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "ex") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "px") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "cm") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "mm") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "in") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "pt") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "pc") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "deg") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "rad") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "grad") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "ms") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "s") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "hz") == 0) {
+    return TRUE;
+  }
+  if (strcmp(token.chars, "khz") == 0) {
+    return TRUE;
+  }
+  if (token.type == TokenType_Identifier) {
+    return TRUE;
+  }
+  return FALSE;
 }
 
 int runWhiteSpace(TokenStream* stream) {
@@ -456,9 +516,19 @@ SyntaxNode* readSelectorType(TokenStream* stream) {
 //4. readHexColor
 
 SyntaxNode* readExpression(TokenStream* stream) {
-  SyntaxNode* node = createNode(NodeType_Expression);
-  Token token = currentToken(stream);
-  return node;
+  SyntaxNode* left = readTerm(stream);
+  while(isOperator(currentToken(stream))) {
+    Token operator = currentToken(stream);
+    advance(stream);
+
+    SyntaxNode* node = createNode(NodeType_Expression);
+    SyntaxNode* right = readTerm(stream);
+    node -> right = right;
+    node -> left = left;
+    node -> token = operator;
+    left = node;
+  }
+  return left;
 }
 
 SyntaxNode* readTerm(TokenStream* stream) {
@@ -466,10 +536,6 @@ SyntaxNode* readTerm(TokenStream* stream) {
   Token token = currentToken(stream);
   node -> token = token;
   return node;
-}
-
-SyntaxNode* readOperator(TokenStream* stream) {
-  return NULL;
 }
 
 SyntaxNode* readFunction(TokenStream* stream) {
@@ -517,8 +583,7 @@ SyntaxNode* readAttribute(TokenStream* stream) {
     if (currentToken(stream).type == TokenType_Identifier) {
       nextToken(stream, TokenType_Identifier);
       node -> left = readIdentifier(stream);
-    }
-    if (currentToken(stream).type == TokenType_String) {
+    } else if (currentToken(stream).type == TokenType_String) {
       nextToken(stream, TokenType_String);
       node -> left =  readString(stream);
     }
